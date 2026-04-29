@@ -14,6 +14,7 @@ class ModelConfig:
     max_model_len: int = 8192
     tensor_parallel_size: int = 1
     server_type: str = "vllm"   # "vllm" or "sglang"
+    visible_gpus: str = "all"   # "all" or "0,1" or "0" etc.
     extra_args: List[str] = field(default_factory=list)
 
 

@@ -33,18 +33,31 @@ logger = logging.getLogger("benchmark")
 # GPU helpers
 # ---------------------------------------------------------------------------
 
-def get_gpu_memory_mib(tensor_parallel_size: int = 1) -> list[int]:
-    """Query total GPU memory for the first `tensor_parallel_size` devices (MiB each)."""
+def get_gpu_memory_mib(tensor_parallel_size: int = 1, visible_gpus: str = "all") -> list[int]:
+    """Query total GPU memory for the relevant devices (MiB each)."""
     r = subprocess.run(
-        ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+        ["nvidia-smi", "--query-gpu=index,memory.total", "--format=csv,noheader,nounits"],
         capture_output=True, text=True, timeout=10,
     )
-    all_mem = [int(x) for x in r.stdout.strip().split()]
-    if len(all_mem) < tensor_parallel_size:
+    # Parse: "0, 40960 MiB" -> {0: 40960, 1: 40960, ...}
+    all_mem = {}
+    for line in r.stdout.strip().split("\n"):
+        parts = line.split(",")
+        idx = int(parts[0].strip())
+        mem = int(parts[1].strip().split()[0])
+        all_mem[idx] = mem
+
+    if visible_gpus == "all":
+        gpu_ids = sorted(all_mem.keys())
+    else:
+        gpu_ids = [int(x.strip()) for x in visible_gpus.split(",")]
+
+    if len(gpu_ids) < tensor_parallel_size:
         raise RuntimeError(
-            f"Only {len(all_mem)} GPUs found, but tensor_parallel_size={tensor_parallel_size}"
+            f"Only {len(gpu_ids)} GPUs available (visible_gpus={visible_gpus}), "
+            f"but tensor_parallel_size={tensor_parallel_size}"
         )
-    return all_mem[:tensor_parallel_size]
+    return [all_mem[i] for i in gpu_ids[:tensor_parallel_size]]
 
 
 def get_model_weight_bytes(model_path: str) -> int:
@@ -177,7 +190,9 @@ def run_all(cfg: BenchmarkConfig) -> List[Dict[str, Any]]:
     for model_cfg in cfg.models:
         logger.info("===== Model: %s =====", model_cfg.name)
 
-        gpu_memories_mib = get_gpu_memory_mib(model_cfg.tensor_parallel_size)
+        gpu_memories_mib = get_gpu_memory_mib(
+            model_cfg.tensor_parallel_size, model_cfg.visible_gpus,
+        )
         total_gpu_gb = sum(gpu_memories_mib) / 1024
         logger.info("GPUs: %d × %d MiB = %.1f GB total",
                      len(gpu_memories_mib), gpu_memories_mib[0], total_gpu_gb)

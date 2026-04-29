@@ -6,6 +6,7 @@ models:
     gpu_memory_utilization: 0.9
     max_model_len: 8192
     tensor_parallel_size: 4
+    visible_gpus: "all"   # "all" 或 "0,1,2,3" 指定可见GPU
 
   - name: "Qwen3.5-9B-sglang"
     path: /data/models/Qwen3.5-9B
@@ -14,6 +15,7 @@ models:
     gpu_memory_utilization: 0.9
     max_model_len: 8192
     tensor_parallel_size: 4
+    visible_gpus: "all"
 
 workloads:
   # 短输入短输出，单并发
