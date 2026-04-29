@@ -13,6 +13,7 @@ class ModelConfig:
     gpu_memory_utilization: float = 0.9
     max_model_len: int = 8192
     tensor_parallel_size: int = 1
+    server_type: str = "vllm"   # "vllm" or "sglang"
     extra_args: List[str] = field(default_factory=list)
 
 

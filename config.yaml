@@ -1,10 +1,19 @@
 models:
-  - name: "Qwen3.5-9B"
+  - name: "Qwen3.5-9B-vllm"
     path: /data/models/Qwen3.5-9B
     image: vllm/vllm-openai:v0.19.1
+    server_type: vllm
     gpu_memory_utilization: 0.9
     max_model_len: 8192
-    tensor_parallel_size: 4   # 单卡为1，多卡改为对应数量
+    tensor_parallel_size: 4
+
+  - name: "Qwen3.5-9B-sglang"
+    path: /data/models/Qwen3.5-9B
+    image: lmsysorg/sglang:v0.5.10.post1
+    server_type: sglang
+    gpu_memory_utilization: 0.9
+    max_model_len: 8192
+    tensor_parallel_size: 4
 
 workloads:
   # 短输入短输出，单并发
@@ -15,26 +24,26 @@ workloads:
   - input_tokens: 128
     output_tokens: 128
     concurrency: 4
-  # 中等输入输出，中等并发
-  - input_tokens: 512
-    output_tokens: 512
-    concurrency: 4
-  # 长输入短输出，中等并发
-  - input_tokens: 1024
-    output_tokens: 256
-    concurrency: 4
-  # 中等输入长输出
-  - input_tokens: 512
-    output_tokens: 1024
-    concurrency: 4
-  # 长输入长输出，高并发
-  - input_tokens: 2048
-    output_tokens: 512
-    concurrency: 8
-  # 超长输入
-  - input_tokens: 4096
-    output_tokens: 256
-    concurrency: 4
+  # # 中等输入输出，中等并发
+  # - input_tokens: 512
+  #   output_tokens: 512
+  #   concurrency: 4
+  # # 长输入短输出，中等并发
+  # - input_tokens: 1024
+  #   output_tokens: 256
+  #   concurrency: 4
+  # # 中等输入长输出
+  # - input_tokens: 512
+  #   output_tokens: 1024
+  #   concurrency: 4
+  # # 长输入长输出，高并发
+  # - input_tokens: 2048
+  #   output_tokens: 512
+  #   concurrency: 8
+  # # 超长输入
+  # - input_tokens: 4096
+  #   output_tokens: 256
+  #   concurrency: 4
 
 # 全局参数（可选覆盖）
 metrics_poll_interval: 0.1   # KV Cache 峰值采样间隔（秒）

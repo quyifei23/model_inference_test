@@ -15,10 +15,14 @@ from container import VLLMContainer
 from metrics import (
     MetricsSnapshot,
     compute_differential_average,
+    compute_differential_two_metric_div,
     PeakKVCacheTracker,
-    _METRIC_PREFILL,
-    _METRIC_TTFT,
-    _METRIC_DECODE,
+    _prefill_metric,
+    _prefill_label_filter,
+    _ttft_metric,
+    _decode_metric,
+    _e2e_metric,
+    _cache_gauge_candidates,
 )
 from benchmark import PromptGenerator, run_workload_burst, warmup
 
@@ -76,15 +80,16 @@ def compute_total_kv_cache_bytes(
 # ---------------------------------------------------------------------------
 
 def cleanup_orphans() -> None:
-    r = subprocess.run(
-        ["docker", "ps", "-a", "--filter", "name=vllm-bench-", "--format", "{{.Names}}"],
-        capture_output=True, text=True, timeout=10,
-    )
-    names = [n for n in r.stdout.strip().split("\n") if n]
-    for name in names:
-        logger.warning("Cleaning up orphan container: %s", name)
-        subprocess.run(["docker", "stop", name], capture_output=True, timeout=30)
-        subprocess.run(["docker", "rm", "--force", name], capture_output=True, timeout=15)
+    for prefix in ("vllm-bench-", "sglang-bench-"):
+        r = subprocess.run(
+            ["docker", "ps", "-a", "--filter", f"name={prefix}", "--format", "{{.Names}}"],
+            capture_output=True, text=True, timeout=10,
+        )
+        for name in r.stdout.strip().split("\n"):
+            if name:
+                logger.warning("Cleaning up orphan container: %s", name)
+                subprocess.run(["docker", "stop", name], capture_output=True, timeout=30)
+                subprocess.run(["docker", "rm", "--force", name], capture_output=True, timeout=15)
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +104,7 @@ def run_single_workload(
     metrics_url: str,
     request_timeout: int,
     poll_interval: float,
+    server_type: str,
 ) -> Dict[str, Any]:
     prompt = generator.generate(wl.input_tokens)
     actual_tokens = len(generator._tokenizer.encode(prompt).ids)
@@ -109,7 +115,8 @@ def run_single_workload(
 
     before = MetricsSnapshot.fetch(metrics_url)
 
-    tracker = PeakKVCacheTracker(metrics_url, interval=poll_interval)
+    candidates = _cache_gauge_candidates(server_type)
+    tracker = PeakKVCacheTracker(metrics_url, candidates=candidates, interval=poll_interval)
     tracker.start()
 
     t0 = time.monotonic()
@@ -123,15 +130,28 @@ def run_single_workload(
     )
     elapsed = time.monotonic() - t0
 
-    # Give vLLM a moment to flush metrics
     time.sleep(2.0)
 
     tracker.stop()
     after = MetricsSnapshot.fetch(metrics_url)
 
-    avg_prefill = compute_differential_average(before, after, _METRIC_PREFILL)
-    avg_ttft = compute_differential_average(before, after, _METRIC_TTFT)
-    avg_decode = compute_differential_average(before, after, _METRIC_DECODE)
+    prefill_filter = _prefill_label_filter(server_type)
+    avg_prefill = compute_differential_average(
+        before, after, _prefill_metric(server_type), label_filter=prefill_filter,
+    )
+    avg_ttft = compute_differential_average(
+        before, after, _ttft_metric(server_type),
+    )
+
+    decode_metric = _decode_metric(server_type)
+    if decode_metric:
+        avg_decode = compute_differential_average(before, after, decode_metric)
+    else:
+        # SGLang: decode = e2e - ttft
+        avg_decode = compute_differential_two_metric_div(
+            before, after,
+            _e2e_metric(server_type), _ttft_metric(server_type),
+        )
 
     return {
         "input_tokens": wl.input_tokens,
@@ -176,23 +196,23 @@ def run_all(cfg: BenchmarkConfig) -> List[Dict[str, Any]]:
             logger.critical("KV cache budget <= 0, skipping model %s", model_cfg.name)
             continue
 
-        with VLLMContainer(
+        os.makedirs(cfg.output_dir, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_path = os.path.join(cfg.output_dir, f"{model_cfg.name}_{ts}.log")
+
+        container = VLLMContainer(
             model_cfg,
             port=cfg.vllm_port,
             shm_size=cfg.shm_size,
             health_timeout=cfg.health_timeout_seconds,
-        ) as container:
+        )
+        container.start(log_file=log_path)
+        try:
+            container.wait_until_healthy()
+
             base_url = container.base_url
             metrics_url = f"{base_url}/metrics"
             model_name = model_cfg.path
-
-            # Save startup logs
-            os.makedirs(cfg.output_dir, exist_ok=True)
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            log_path = os.path.join(cfg.output_dir, f"{model_cfg.name}_{ts}_startup.log")
-            with open(log_path, "w") as lf:
-                lf.write(container.get_logs())
-            logger.info("Startup log saved to %s", log_path)
 
             generator = PromptGenerator(model_cfg.path)
 
@@ -213,6 +233,7 @@ def run_all(cfg: BenchmarkConfig) -> List[Dict[str, Any]]:
                     metrics_url=metrics_url,
                     request_timeout=cfg.request_timeout_seconds,
                     poll_interval=cfg.metrics_poll_interval,
+                    server_type=model_cfg.server_type,
                 )
                 row["model"] = model_cfg.name
                 row["tensor_parallel_size"] = model_cfg.tensor_parallel_size
@@ -236,6 +257,9 @@ def run_all(cfg: BenchmarkConfig) -> List[Dict[str, Any]]:
                 "model_weight_gb": weight_gb,
                 "results": model_results,
             })
+
+        finally:
+            container.stop()
 
     return all_results
 
