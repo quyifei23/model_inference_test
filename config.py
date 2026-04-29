@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import yaml
 from dataclasses import dataclass, field
-from typing import List
+from typing import Dict, List
 
 
 @dataclass
@@ -15,6 +15,7 @@ class ModelConfig:
     tensor_parallel_size: int = 1
     server_type: str = "vllm"   # "vllm" or "sglang"
     visible_gpus: str = "all"   # "all" or "0,1" or "0" etc.
+    env_vars: Dict[str, str] = field(default_factory=dict)
     extra_args: List[str] = field(default_factory=list)
 
 

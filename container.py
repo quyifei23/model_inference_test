@@ -45,16 +45,21 @@ class VLLMContainer:
     def start(self, log_file: str | None = None) -> None:
         volume = _model_mount_volume(self._model.path)
         gpus = self._model.visible_gpus
-        gpu_arg = f'"device={gpus}"' if gpus != "all" else "all"
+        gpu_arg = "all"
+        cuda_visible = f"CUDA_VISIBLE_DEVICES={gpus}"
         common = [
             "docker", "run", "-d", "--rm",
             "--gpus", gpu_arg,
+            "--env", cuda_visible,
             "--name", self._name,
             "--shm-size", self._shm_size,
             "-p", f"{self._port}:{self._port}",
             "-v", volume,
-            self._model.image,
         ]
+        # User-defined env vars
+        for k, v in self._model.env_vars.items():
+            common += ["--env", f"{k}={v}"]
+        common.append(self._model.image)
 
         if self._model.server_type == "sglang":
             server_args = self._build_sglang_args()

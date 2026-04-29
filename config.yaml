@@ -6,7 +6,10 @@ models:
     gpu_memory_utilization: 0.9
     max_model_len: 8192
     tensor_parallel_size: 4
-    visible_gpus: "all"   # "all" 或 "0,1,2,3" 指定可见GPU
+    visible_gpus: "0,1,2,3"
+    env_vars:
+      NCCL_IB_DISABLE: "1"
+      NCCL_NVLS_ENABLE: "0"
 
   - name: "Qwen3.5-9B-sglang"
     path: /data/models/Qwen3.5-9B
@@ -15,7 +18,10 @@ models:
     gpu_memory_utilization: 0.9
     max_model_len: 8192
     tensor_parallel_size: 4
-    visible_gpus: "all"
+    visible_gpus: "0,1,2,3"
+    env_vars:
+      NCCL_IB_DISABLE: "1"
+      NCCL_NVLS_ENABLE: "0"
 
 workloads:
   # 短输入短输出，单并发
@@ -49,7 +55,7 @@ workloads:
 
 # 全局参数（可选覆盖）
 metrics_poll_interval: 0.1   # KV Cache 峰值采样间隔（秒）
-health_timeout_seconds: 1200   # 容器启动等待超时
-request_timeout_seconds: 1200 # 单组 workload 请求超时
+health_timeout_seconds: 1800   # 容器启动等待超时
+request_timeout_seconds: 600 # 单组 workload 请求超时
 shm_size: "20GB"
 vllm_port: 8333
