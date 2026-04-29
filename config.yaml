@@ -1,0 +1,44 @@
+models:
+  - name: "Qwen3.5-9B"
+    path: /data/models/Qwen3.5-9B
+    image: vllm/vllm-openai:v0.19.1
+    gpu_memory_utilization: 0.9
+    max_model_len: 8192
+    tensor_parallel_size: 4   # 单卡为1，多卡改为对应数量
+
+workloads:
+  # 短输入短输出，单并发
+  - input_tokens: 128
+    output_tokens: 128
+    concurrency: 1
+  # 短输入短输出，中等并发
+  - input_tokens: 128
+    output_tokens: 128
+    concurrency: 4
+  # 中等输入输出，中等并发
+  - input_tokens: 512
+    output_tokens: 512
+    concurrency: 4
+  # 长输入短输出，中等并发
+  - input_tokens: 1024
+    output_tokens: 256
+    concurrency: 4
+  # 中等输入长输出
+  - input_tokens: 512
+    output_tokens: 1024
+    concurrency: 4
+  # 长输入长输出，高并发
+  - input_tokens: 2048
+    output_tokens: 512
+    concurrency: 8
+  # 超长输入
+  - input_tokens: 4096
+    output_tokens: 256
+    concurrency: 4
+
+# 全局参数（可选覆盖）
+metrics_poll_interval: 0.1   # KV Cache 峰值采样间隔（秒）
+health_timeout_seconds: 1200   # 容器启动等待超时
+request_timeout_seconds: 1200 # 单组 workload 请求超时
+shm_size: "20GB"
+vllm_port: 8333
